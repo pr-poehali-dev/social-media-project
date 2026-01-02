@@ -14,8 +14,9 @@ interface Message {
   sender: 'me' | 'other';
   time: string;
   media?: {
-    type: 'image' | 'video';
+    type: 'image' | 'video' | 'voice';
     url: string;
+    duration?: number;
   };
 }
 
@@ -36,6 +37,10 @@ export default function Index() {
   const [brightness, setBrightness] = useState([100]);
   const [contrast, setContrast] = useState([100]);
   const [saturation, setSaturation] = useState([100]);
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingTime, setRecordingTime] = useState(0);
+  const [callActive, setCallActive] = useState(false);
+  const [callType, setCallType] = useState<'audio' | 'video' | null>(null);
 
   const contacts: Contact[] = [
     { id: 1, name: 'Анна Смирнова', avatar: '👩🏻', lastMessage: 'Отправила фото', time: '14:23', online: true },
@@ -78,6 +83,45 @@ export default function Index() {
     }
   };
 
+  const startVoiceRecording = () => {
+    setIsRecording(true);
+    setRecordingTime(0);
+    const interval = setInterval(() => {
+      setRecordingTime(prev => prev + 1);
+    }, 1000);
+    (window as any).recordingInterval = interval;
+  };
+
+  const stopVoiceRecording = () => {
+    setIsRecording(false);
+    clearInterval((window as any).recordingInterval);
+    const newMessage: Message = {
+      id: messages.length + 1,
+      text: '',
+      sender: 'me',
+      time: new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }),
+      media: { type: 'voice', url: '#', duration: recordingTime },
+    };
+    setMessages([...messages, newMessage]);
+    setRecordingTime(0);
+  };
+
+  const startCall = (type: 'audio' | 'video') => {
+    setCallActive(true);
+    setCallType(type);
+  };
+
+  const endCall = () => {
+    setCallActive(false);
+    setCallType(null);
+  };
+
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
   const resetFilters = () => {
     setBrightness([100]);
     setContrast([100]);
@@ -89,7 +133,45 @@ export default function Index() {
   });
 
   return (
-    <div className="h-screen flex bg-background overflow-hidden">
+    <div className="h-screen flex bg-background overflow-hidden relative">
+      {callActive && (
+        <div className="absolute inset-0 z-50 bg-background/95 backdrop-blur-lg flex items-center justify-center animate-fade-in">
+          <div className="w-full max-w-4xl p-8 text-center">
+            <div className="mb-8">
+              <Avatar className="w-32 h-32 mx-auto text-6xl mb-4">
+                <AvatarFallback>{contacts.find((c) => c.id === selectedContact)?.avatar}</AvatarFallback>
+              </Avatar>
+              <h2 className="text-2xl font-bold mb-2">{contacts.find((c) => c.id === selectedContact)?.name}</h2>
+              <p className="text-muted-foreground">{callType === 'video' ? 'Видеозвонок' : 'Аудиозвонок'}...</p>
+            </div>
+
+            {callType === 'video' && (
+              <div className="grid grid-cols-2 gap-4 mb-8">
+                <div className="aspect-video bg-muted rounded-2xl flex items-center justify-center">
+                  <Icon name="User" size={48} className="text-muted-foreground" />
+                </div>
+                <div className="aspect-video bg-card border-2 border-primary rounded-2xl flex items-center justify-center gradient-purple-pink">
+                  <Icon name="User" size={48} className="text-white" />
+                </div>
+              </div>
+            )}
+
+            <div className="flex items-center justify-center gap-4">
+              <Button size="icon" variant="ghost" className="w-14 h-14 rounded-full bg-muted hover:bg-muted/80">
+                <Icon name={callType === 'video' ? 'VideoOff' : 'MicOff'} size={24} />
+              </Button>
+              <Button size="icon" className="w-16 h-16 rounded-full bg-destructive hover:bg-destructive/90" onClick={endCall}>
+                <Icon name="PhoneOff" size={24} />
+              </Button>
+              {callType === 'video' && (
+                <Button size="icon" variant="ghost" className="w-14 h-14 rounded-full bg-muted hover:bg-muted/80">
+                  <Icon name="SwitchCamera" size={24} />
+                </Button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
       <div className="w-80 border-r border-border flex flex-col bg-card">
         <div className="p-4 gradient-purple-pink">
           <div className="flex items-center justify-between mb-4">
@@ -151,10 +233,10 @@ export default function Index() {
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <Button size="icon" variant="ghost" className="text-white hover:bg-white/20">
+              <Button size="icon" variant="ghost" className="text-white hover:bg-white/20" onClick={() => startCall('audio')}>
                 <Icon name="Phone" size={20} />
               </Button>
-              <Button size="icon" variant="ghost" className="text-white hover:bg-white/20">
+              <Button size="icon" variant="ghost" className="text-white hover:bg-white/20" onClick={() => startCall('video')}>
                 <Icon name="Video" size={20} />
               </Button>
               <Button size="icon" variant="ghost" className="text-white hover:bg-white/20">
@@ -182,8 +264,20 @@ export default function Index() {
                     <div className="mb-2 rounded-lg overflow-hidden">
                       {message.media.type === 'image' ? (
                         <img src={message.media.url} alt="Media" className="w-full h-48 object-cover" />
-                      ) : (
+                      ) : message.media.type === 'video' ? (
                         <video src={message.media.url} controls className="w-full h-48" />
+                      ) : (
+                        <div className="flex items-center gap-3 bg-white/10 p-3 rounded-lg">
+                          <Button size="icon" variant="ghost" className="text-white hover:bg-white/20">
+                            <Icon name="Play" size={20} />
+                          </Button>
+                          <div className="flex-1">
+                            <div className="h-1 bg-white/20 rounded-full overflow-hidden">
+                              <div className="h-full bg-white w-1/3 rounded-full" />
+                            </div>
+                          </div>
+                          <span className="text-xs">{formatTime(message.media.duration || 0)}</span>
+                        </div>
                       )}
                     </div>
                   )}
@@ -284,29 +378,49 @@ export default function Index() {
             </div>
           )}
 
-          <div className="flex items-end gap-2">
-            <label className="cursor-pointer">
-              <input type="file" accept="image/*,video/*" onChange={handleMediaUpload} className="hidden" />
-              <Button size="icon" variant="ghost" className="gradient-purple-pink text-white hover:opacity-90" asChild>
-                <div>
-                  <Icon name="ImagePlus" size={20} />
-                </div>
-              </Button>
-            </label>
-
-            <div className="flex-1 flex gap-2">
-              <Input
-                placeholder="Написать сообщение..."
-                value={messageInput}
-                onChange={(e) => setMessageInput(e.target.value)}
-                onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
-                className="flex-1"
-              />
-              <Button onClick={handleSendMessage} className="gradient-purple-pink text-white hover:opacity-90">
+          {isRecording ? (
+            <div className="flex items-center gap-3 p-4 bg-destructive/10 rounded-lg animate-scale-in">
+              <div className="w-3 h-3 bg-destructive rounded-full animate-pulse" />
+              <div className="flex-1">
+                <p className="text-sm font-medium">Запись голосового сообщения...</p>
+                <p className="text-xs text-muted-foreground">{formatTime(recordingTime)}</p>
+              </div>
+              <Button size="icon" onClick={stopVoiceRecording} className="gradient-purple-pink text-white">
                 <Icon name="Send" size={20} />
               </Button>
+              <Button size="icon" variant="ghost" onClick={() => { setIsRecording(false); clearInterval((window as any).recordingInterval); setRecordingTime(0); }}>
+                <Icon name="X" size={20} />
+              </Button>
             </div>
-          </div>
+          ) : (
+            <div className="flex items-end gap-2">
+              <label className="cursor-pointer">
+                <input type="file" accept="image/*,video/*" onChange={handleMediaUpload} className="hidden" />
+                <Button size="icon" variant="ghost" className="gradient-purple-pink text-white hover:opacity-90" asChild>
+                  <div>
+                    <Icon name="ImagePlus" size={20} />
+                  </div>
+                </Button>
+              </label>
+
+              <div className="flex-1 flex gap-2">
+                <Input
+                  placeholder="Написать сообщение..."
+                  value={messageInput}
+                  onChange={(e) => setMessageInput(e.target.value)}
+                  onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
+                  className="flex-1"
+                />
+                <Button onClick={handleSendMessage} className="gradient-purple-pink text-white hover:opacity-90">
+                  <Icon name="Send" size={20} />
+                </Button>
+              </div>
+
+              <Button size="icon" variant="ghost" className="gradient-purple-blue text-white hover:opacity-90" onClick={startVoiceRecording}>
+                <Icon name="Mic" size={20} />
+              </Button>
+            </div>
+          )}
         </div>
       </div>
     </div>
